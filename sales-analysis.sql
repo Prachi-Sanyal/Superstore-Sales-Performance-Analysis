@@ -996,3 +996,134 @@ select region,
 from supermart
 group by region,category
 order by region,category;
+
+
+
+-------------------------------------- Moving to Tableau ------------------------------------
+CREATE OR REPLACE VIEW v_superstore_base AS
+SELECT
+    row_id,
+    order_id,
+    order_date,
+    ship_date,
+    customer_id,
+    customer_name,
+    segment,
+    country,
+    city,
+    state,
+    region,
+    product_id,
+    category,
+    "sub-category" AS sub_category,
+    product_name,
+    sales,
+    quantity,
+    discount,
+    profit
+FROM supermart;
+
+
+
+
+--------------------------------- FEATURE ENGINEERING ------------------------
+CREATE OR REPLACE VIEW v_superstore_features AS
+SELECT 
+    b.*, -- Use the alias here to avoid the syntax error
+    
+    -- 1. Profit Margin
+    ROUND((b.profit / NULLIF(b.sales, 0)) * 100, 2) AS profit_margin_pct,
+
+    -- 2. Discount Impact Flag
+    CASE 
+        WHEN b.discount = 0 THEN 'No Discount'
+        WHEN b.discount <= 0.2 THEN 'Low Discount'
+        WHEN b.discount <= 0.5 THEN 'Medium Discount'
+        ELSE 'High Discount'
+    END AS discount_segment,
+
+    -- 3. Order Year / Month
+    EXTRACT(YEAR FROM b.order_date) AS order_year,
+    EXTRACT(MONTH FROM b.order_date) AS order_month,
+
+    -- 4. Shipping Delay (days)
+    (b.ship_date - b.order_date) AS shipping_days,
+
+    -- 5. Profit Category
+    CASE
+        WHEN b.profit < 0 THEN 'Loss'
+        WHEN b.profit < 100 THEN 'Low Profit'
+        WHEN b.profit < 500 THEN 'Medium Profit'
+        ELSE 'High Profit'
+    END AS profit_segment,
+
+    -- 6. Sales Banding
+    CASE
+        WHEN b.sales < 100 THEN 'Low Value'
+        WHEN b.sales < 500 THEN 'Medium Value'
+        ELSE 'High Value'
+    END AS sales_segment
+
+FROM v_superstore_base b; -- 'b' acts as the alias for your base view
+
+-------------------------------------------------------
+
+CREATE OR REPLACE VIEW v_superstore_kpis AS
+SELECT
+    SUM(sales) AS total_sales,
+    SUM(profit) AS total_profit,
+    COUNT(DISTINCT order_id) AS total_orders,
+    COUNT(DISTINCT customer_id) AS total_customers,
+    SUM(profit)/NULLIF(SUM(sales),0) * 100 AS overall_profit_margin,
+    AVG(discount) AS avg_discount,
+    AVG(sales) AS avg_sales,
+    AVG(profit) AS avg_profit
+FROM v_superstore_base;
+
+
+-----------------------------
+-- Sales by Category
+CREATE OR REPLACE VIEW v_sales_by_category AS
+SELECT
+    category,
+    SUM(sales) AS total_sales,
+    SUM(profit) AS total_profit
+FROM v_superstore_base
+GROUP BY category;
+
+-- Sales by sub-category
+CREATE OR REPLACE VIEW v_sales_by_subcategory AS
+SELECT
+    sub_category,
+    SUM(sales) AS total_sales,
+    SUM(profit) AS total_profit
+FROM v_superstore_base
+GROUP BY sub_category
+
+-- Monthly Trend
+CREATE OR REPLACE VIEW v_monthly_trend AS
+SELECT
+    EXTRACT(YEAR FROM order_date) AS year,
+    EXTRACT(MONTH FROM order_date) AS month,
+    SUM(sales) AS total_sales,
+    SUM(profit) AS total_profit
+FROM v_superstore_base
+GROUP BY 1,2
+ORDER BY 1,2;
+
+--Customer Analysis
+CREATE OR REPLACE VIEW v_customer_analysis AS
+SELECT
+    customer_id,
+    customer_name,
+    SUM(sales) AS lifetime_sales,
+    SUM(profit) AS lifetime_profit,
+    COUNT(DISTINCT order_id) AS total_orders,
+    AVG(sales) AS avg_order_value
+FROM v_superstore_base
+GROUP BY customer_id, customer_name;
+
+
+
+
+
